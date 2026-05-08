@@ -1,0 +1,137 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isEmailVerified() {
+      return isSignedIn() && (request.auth.token.get('email_verified', false) == true);
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.get('email', '') == "rewornstreet@gmail.com" && request.auth.token.get('email_verified', false) == true) ||
+        (request.auth.token.get('phone_number', '') in ["+918927668457", "+919733910142"])
+      );
+    }
+
+    // --- Products ---
+    function isValidProduct(data) {
+      return data.keys().hasAll(['name', 'price', 'category', 'image']) &&
+             data.name is string && data.name.size() <= 200 &&
+             data.price is number && data.price >= 0 &&
+             data.category is string &&
+             data.image is string && data.image.size() <= 1000 &&
+             (!data.keys().contains('sellerId') || (data.sellerId is string && data.sellerId.size() <= 128));
+    }
+
+    function isSeller() {
+      return isSignedIn() && 
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'seller' || isAdmin());
+    }
+
+    match /products/{productId} {
+      allow get, list: if true;
+      allow create: if (isAdmin() || isSeller()) && isValidProduct(incoming()) && isValidId(productId);
+      allow update: if (isAdmin() || (isSeller() && existing().sellerId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sellerId)) && 
+                    isValidProduct(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'price', 'category', 'image', 'description', 'stock', 'isFeatured', 'sellerId'])
+      );
+      allow delete: if isAdmin() || (isSeller() && existing().sellerId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sellerId);
+    }
+
+    // --- Categories ---
+    match /categories/{categoryId} {
+      allow get, list: if true;
+      allow write: if isAdmin();
+    }
+
+    // --- Users ---
+    function isValidUser(data) {
+      return data.uid == request.auth.uid &&
+             (data.get('email', null) == request.auth.token.get('email', null)) &&
+             (data.get('phoneNumber', null) == request.auth.token.get('phone_number', null)) &&
+             (data.get('role', 'customer') == 'customer' || data.get('role', 'customer') == 'seller' || (data.get('role', 'customer') == 'admin' && isAdmin()));
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming());
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin()) && 
+                    (
+                      (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'applicationPending', 'phoneNumber', 'address', 'walletBalance'])) ||
+                      isAdmin()
+                    ) &&
+                    isValidUser(incoming());
+    }
+
+    // --- Seller Applications ---
+    match /seller_applications/{appId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isAdmin() || (isSignedIn() && request.query.limit <= 10 && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && incoming().status == 'pending';
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // --- Orders ---
+    match /orders/{orderId} {
+      allow get: if isSignedIn() && (
+        existing().userId == request.auth.uid || 
+        isAdmin() || 
+        (isSeller() && existing().items.any(item, item.sellerId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sellerId))
+      );
+      allow list: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || 
+        isAdmin() ||
+        (isSeller() && resource.data.items.any(item, item.sellerId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sellerId))
+      );
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+    
+    // --- Reviews ---
+    function isValidReview(data) {
+      return data.productId is string &&
+             data.userId == request.auth.uid &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() <= 1000;
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidReview(incoming());
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && isValidReview(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['comment', 'rating']);
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // --- Admins (Master List) ---
+    match /admins/{adminId} {
+      allow read: if isSignedIn(); // Needed for isAdmin() helper
+      allow write: if false; // Only manageable via Firebase Console or special script
+    }
+  }
+}

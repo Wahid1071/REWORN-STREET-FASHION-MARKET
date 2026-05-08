@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "An item available for purchase in the store",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Display name of the product" },
+        "description": { "type": "string", "description": "Long form description" },
+        "price": { "type": "number", "description": "Price in standard currency" },
+        "category": { "type": "string", "description": "Category ID or name" },
+        "image": { "type": "string", "description": "URL to the product image" },
+        "stock": { "type": "number", "description": "Quantity available" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "isFeatured": { "type": "boolean" }
+      },
+      "required": ["name", "price", "category", "image"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Product categorization",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "image": { "type": "string" }
+      },
+      "required": ["name", "slug"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["customer", "admin", "seller"] },
+        "phoneNumber": { "type": "string" },
+        "address": { "type": "string" },
+        "walletBalance": { "type": "number" },
+        "sellerId": { "type": "string" },
+        "applicationPending": { "type": "boolean" }
+      }
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A completed purchase",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "items": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "total": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "processing", "shipped", "delivered"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "All available products"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Product categories"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User data"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Customer orders"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Product reviews and ratings."
+    }
+  }
+}
